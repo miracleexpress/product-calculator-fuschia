@@ -52,7 +52,7 @@ app.post('/create-custom-variant', async (req, res) => {
     res.status(200).json({ variantId });
   } catch (err) {
     console.error('Error creating variant:', err.response?.data || err.message);
-    res.status(500).json({ error: 'Failed to create variant' });
+    res.status(500).json({ error: err.message });
   }
 });
 
