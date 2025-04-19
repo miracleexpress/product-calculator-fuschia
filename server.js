@@ -32,7 +32,7 @@ app.post('/create-custom-variant', async (req, res) => {
       `https://${shop}/admin/api/2023-10/products/${productId}/variants.json`,
       {
         variant: {
-          option1: title,
+          option1: `${title} - ${Date.now().toString().slice(-4)}`,
           price: price.toString(),
           sku: `custom-${Date.now()}`,
           inventory_management: null
