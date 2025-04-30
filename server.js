@@ -27,12 +27,13 @@ app.post('/create-custom-variant', async (req, res) => {
   const { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
 
   try {
-    // 1. Varyant oluştur
+    const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
+  
     const variantRes = await axios.post(
       `https://${shop}/admin/api/2023-10/products/${productId}/variants.json`,
       {
         variant: {
-          option1: `${title} - ${Date.now().toString().slice(-4)}`,
+          option1: optionTitle,
           price: price.toString(),
           sku: `custom-${Date.now()}`,
           inventory_management: null
@@ -45,15 +46,19 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       }
     );
-
-    const variantId = variantRes.data.variant.id;
-
-    // 2. Varyant ID'yi geri döndür
-    res.status(200).json({ variantId });
+  
+    const variant = variantRes.data.variant;
+  
+    res.status(200).json({
+      variantId: variant.id,
+      variantTitle: variant.option1
+    });
+  
   } catch (err) {
     console.error('Error creating variant:', err.response?.data || err.message);
     res.status(500).json({ error: err.message });
   }
+  
 });
 
 app.listen(PORT, () => {
