@@ -26,11 +26,14 @@ app.get('/health', (req, res) => {
 app.post('/create-custom-variant', async (req, res) => {
   const { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
 
+  if (!productId || !price) {
+    return res.status(400).json({ error: 'productId and price are required' });
+  }
+
   try {
     const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
     const sku = `custom-${Date.now()}`;
 
-    // Shopify GraphQL Product GID (convert if needed)
     const productGid = `gid://shopify/Product/${productId}`;
 
     const mutation = `
@@ -39,9 +42,9 @@ app.post('/create-custom-variant', async (req, res) => {
           productId: "${productGid}",
           price: "${price}",
           sku: "${sku}",
-          options: ["${optionTitle}"]
-          inventory_management: null,
-          inventory_policy: "continue"
+          options: ["${optionTitle}"],
+          inventoryManagement: null,
+          inventoryPolicy: CONTINUE
         }) {
           productVariant {
             id
@@ -67,10 +70,23 @@ app.post('/create-custom-variant', async (req, res) => {
       }
     );
 
-    const { productVariant, userErrors } = gqlRes.data.data.productVariantCreate;
+    const gqlData = gqlRes?.data;
+
+    if (!gqlData || !gqlData.data || !gqlData.data.productVariantCreate) {
+      console.error('❌ Shopify yanıtı hatalı veya eksik:', JSON.stringify(gqlData, null, 2));
+      return res.status(500).json({ error: 'Shopify yanıtı hatalı veya productVariantCreate eksik' });
+    }
+
+    const { productVariant, userErrors } = gqlData.data.productVariantCreate;
 
     if (userErrors && userErrors.length > 0) {
+      console.error('❌ Shopify userErrors:', userErrors);
       return res.status(400).json({ error: userErrors });
+    }
+
+    if (!productVariant || !productVariant.id) {
+      console.error('❌ Varyant oluşturulamadı, productVariant boş:', productVariant);
+      return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
     }
 
     res.status(200).json({
