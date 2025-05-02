@@ -11,34 +11,52 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-
 app.use(bodyParser.json());
 
-// Shopify Admin API Base Config
+// Shopify Admin API Config
 const shop = process.env.SHOPIFY_SHOP;
 const accessToken = process.env.SHOPIFY_ADMIN_API_KEY;
 
-// Health Check Endpoint
+// Health Check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'API is running' });
 });
 
+// Create Variant with GraphQL
 app.post('/create-custom-variant', async (req, res) => {
   const { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
 
   try {
     const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
-  
-    const variantRes = await axios.post(
-      `https://${shop}/admin/api/2023-10/products/${productId}/variants.json`,
-      {
-        variant: {
-          option1: optionTitle,
-          price: price.toString(),
-          sku: `custom-${Date.now()}`,
-          inventory_management: null
+    const sku = `custom-${Date.now()}`;
+
+    // Shopify GraphQL Product GID (convert if needed)
+    const productGid = `gid://shopify/Product/${productId}`;
+
+    const mutation = `
+      mutation {
+        productVariantCreate(input: {
+          productId: "${productGid}",
+          price: "${price}",
+          sku: "${sku}",
+          options: ["${optionTitle}"]
+        }) {
+          productVariant {
+            id
+            title
+            sku
+          }
+          userErrors {
+            field
+            message
+          }
         }
-      },
+      }
+    `;
+
+    const gqlRes = await axios.post(
+      `https://${shop}/admin/api/2023-10/graphql.json`,
+      { query: mutation },
       {
         headers: {
           'X-Shopify-Access-Token': accessToken,
@@ -46,21 +64,25 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       }
     );
-  
-    const variant = variantRes.data.variant;
-  
+
+    const { productVariant, userErrors } = gqlRes.data.data.productVariantCreate;
+
+    if (userErrors && userErrors.length > 0) {
+      return res.status(400).json({ error: userErrors });
+    }
+
     res.status(200).json({
-      variantId: variant.id,
-      variantTitle: variant.option1
+      variantId: productVariant.id,
+      variantTitle: productVariant.title,
+      sku: productVariant.sku
     });
-  
+
   } catch (err) {
-    console.error('Error creating variant:', err.response?.data || err.message);
+    console.error('GraphQL variant creation error:', err.response?.data || err.message);
     res.status(500).json({ error: err.message });
   }
-  
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
