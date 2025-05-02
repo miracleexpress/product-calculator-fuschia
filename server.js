@@ -40,6 +40,8 @@ app.post('/create-custom-variant', async (req, res) => {
           price: "${price}",
           sku: "${sku}",
           options: ["${optionTitle}"]
+          inventory_management: null,
+          inventory_policy: "continue"
         }) {
           productVariant {
             id
