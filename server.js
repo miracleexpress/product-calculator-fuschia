@@ -4,6 +4,7 @@ import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import cron from 'node-cron';
 
 dotenv.config();
 
@@ -99,6 +100,61 @@ app.post('/create-custom-variant', async (req, res) => {
     console.error('GraphQL variant creation error:', err.response?.data || err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ————————————————
+// Varyant Temizleme (Prune) Bölümü
+// 24 saatten eski varyantları her gün saat 05:00'te siler,
+// silinen adedi de konsola yazar.
+// ————————————————
+async function deleteOldVariants() {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    // 24 saatten eski varyantları REST API ile çek
+    const listRes = await axios.get(
+      `https://${shop}/admin/api/2023-10/variants.json`,
+      {
+        params: { created_at_max: cutoff, limit: 250 },
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const variants = listRes.data.variants || [];
+    console.log(`🗑️ Found ${variants.length} variants older than ${cutoff}`);
+
+    let deletedCount = 0;
+
+    for (const v of variants) {
+      try {
+        await axios.delete(
+          `https://${shop}/admin/api/2023-10/variants/${v.id}.json`,
+          { headers: { 'X-Shopify-Access-Token': accessToken } }
+        );
+        deletedCount++;
+        console.log(`✅ Deleted variant ${v.id}`);
+        // API rate limit korunması için kısa bir gecikme
+        await new Promise(r => setTimeout(r, 500));
+      } catch (delErr) {
+        console.error(`❌ Failed to delete variant ${v.id}:`, delErr.response?.data || delErr.message);
+      }
+    }
+
+    console.log(`🗑️ Total deleted variants in this run: ${deletedCount}`);
+  } catch (err) {
+    console.error('Error fetching old variants:', err.response?.data || err.message);
+  }
+}
+
+// Cron ile her gün 05:00'te çalıştır
+cron.schedule('0 5 * * *', () => {
+  console.log(`[${new Date().toISOString()}] Running prune job…`);
+  deleteOldVariants();
+}, {
+  timezone: 'Europe/Istanbul'
 });
 
 app.listen(PORT, () => {
