@@ -102,6 +102,7 @@ app.post('/create-custom-variant', async (req, res) => {
   }
 });
 
+/*
 // ————————————————
 // Varyant Temizleme (Prune) Bölümü
 // 24 saatten eski varyantları her gün saat 05:00'te siler,
@@ -148,7 +149,9 @@ async function deleteOldVariants() {
     console.error('Error fetching old variants:', err.response?.data || err.message);
   }
 }
+*/
 
+/*
 // Cron ile her gün 05:00'te çalıştır
 cron.schedule('0 5 * * *', () => {
   console.log(`[${new Date().toISOString()}] Running prune job…`);
@@ -156,6 +159,7 @@ cron.schedule('0 5 * * *', () => {
 }, {
   timezone: 'Europe/Istanbul'
 });
+*/
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
