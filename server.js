@@ -122,10 +122,12 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       }
     );
+    /*
     const mfErrors = mfRes.data.data.metafieldsSet.userErrors;
     if (mfErrors && mfErrors.length) {
       console.warn('Metafield set warnings:', mfErrors);
     }
+      */
 
     // 3) Yanıt
     res.status(200).json({
