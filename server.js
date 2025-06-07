@@ -131,7 +131,7 @@ app.post('/create-custom-variant', async (req, res) => {
 
     // 3) Yanıt
     res.status(200).json({
-      variantId,
+      variantId : productVariant.id,
       sku,
       isDeletable: true
     });
