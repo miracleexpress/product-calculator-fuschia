@@ -90,6 +90,7 @@ app.post('/create-custom-variant', async (req, res) => {
       return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
     }
 
+    /*
     // 2) 'isDeletable' metafield set et
     const mfMutation = `
       mutation {
@@ -122,7 +123,7 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       }
     );
-    /*
+    
     const mfErrors = mfRes.data.data.metafieldsSet.userErrors;
     if (mfErrors && mfErrors.length) {
       console.warn('Metafield set warnings:', mfErrors);
