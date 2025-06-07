@@ -90,12 +90,43 @@ app.post('/create-custom-variant', async (req, res) => {
       return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
     }
 
-    res.status(200).json({
-      variantId: productVariant.id,
-      variantTitle: productVariant.title,
-      sku: productVariant.sku
-    });
+    // 2) 'isDeletable' metafield set et
+    const mfMutation = `
+      mutation {
+        metafieldsSet(input: {
+          ownerId: "${variantGid}",
+          metafields: [{
+            namespace: "prune",
+            key: "isdeletable",
+            type: "BOOLEAN",
+            value: "true"
+          }]
+        }) {
+          userErrors { field message }
+        }
+      }
+    `;
+    const mfRes = await axios.post(
+      `https://${shop}/admin/api/2023-10/graphql.json`,
+      { query: mfMutation },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    const mfErrors = mfRes.data.data.metafieldsSet.userErrors;
+    if (mfErrors && mfErrors.length) {
+      console.warn('Metafield set warnings:', mfErrors);
+    }
 
+    // 3) Yanıt
+    res.status(200).json({
+      variantId,
+      sku,
+      isDeletable: true
+    });
   } catch (err) {
     console.error('GraphQL variant creation error:', err.response?.data || err.message);
     res.status(500).json({ error: err.message });
@@ -103,16 +134,16 @@ app.post('/create-custom-variant', async (req, res) => {
 });
 
 /*
-// ————————————————
-// Varyant Temizleme (Prune) Bölümü
-// 24 saatten eski varyantları her gün saat 05:00'te siler,
-// silinen adedi de konsola yazar.
-// ————————————————
+// —————————————————————————————————————————————
+// PRUNE JOB: 24 saatten eski ve isDeletable=true metafield’ı olanları siler
+// —————————————————————————————————————————————
 async function deleteOldVariants() {
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  let deletedCount = 0;
+  let skippedCount = 0;
 
   try {
-    // 24 saatten eski varyantları REST API ile çek
+    // Eski varyantları çek
     const listRes = await axios.get(
       `https://${shop}/admin/api/2023-10/variants.json`,
       {
@@ -123,43 +154,56 @@ async function deleteOldVariants() {
         }
       }
     );
-
     const variants = listRes.data.variants || [];
-    console.log(`🗑️ Found ${variants.length} variants older than ${cutoff}`);
-
-    let deletedCount = 0;
+    console.log(`Found ${variants.length} variants older than ${cutoff}`);
 
     for (const v of variants) {
+      // Metafield’ı kontrol et
+      const mfRes = await axios.get(
+        `https://${shop}/admin/api/2023-10/variants/${v.id}/metafields.json`,
+        { headers: { 'X-Shopify-Access-Token': accessToken } }
+      );
+      const isDeletable = (mfRes.data.metafields || []).some(
+        mf => mf.namespace === 'prune' && mf.key === 'isDeletable' && mf.value === 'true'
+      );
+
+      if (!isDeletable) {
+        skippedCount++;
+        console.log(`⏭️  Skipped non-deletable variant ${v.id}`);
+        continue;
+      }
+
+      // Sil
       try {
         await axios.delete(
           `https://${shop}/admin/api/2023-10/variants/${v.id}.json`,
           { headers: { 'X-Shopify-Access-Token': accessToken } }
         );
         deletedCount++;
-        console.log(`✅ Deleted variant ${v.id}`);
-        // API rate limit korunması için kısa bir gecikme
-        await new Promise(r => setTimeout(r, 500));
+        console.log(`✅  Deleted variant ${v.id}`);
       } catch (delErr) {
-        console.error(`❌ Failed to delete variant ${v.id}:`, delErr.response?.data || delErr.message);
+        console.error(`❌  Failed to delete variant ${v.id}:`, delErr.response?.data || delErr.message);
       }
+
+      // Rate limit için kısa gecikme
+      await new Promise(r => setTimeout(r, 500));
     }
 
-    console.log(`🗑️ Total deleted variants in this run: ${deletedCount}`);
+    console.log(`Prune complete: ${deletedCount} deleted, ${skippedCount} skipped.`);
   } catch (err) {
-    console.error('Error fetching old variants:', err.response?.data || err.message);
+    console.error('Error during prune run:', err.response?.data || err.message);
   }
 }
 */
 
 /*
-// Cron ile her gün 05:00'te çalıştır
+// Cron job: her gün 05:00’te çalıştır (Europe/Istanbul)
 cron.schedule('0 5 * * *', () => {
-  console.log(`[${new Date().toISOString()}] Running prune job…`);
+  console.log(`[${new Date().toISOString()}] Starting prune job…`);
   deleteOldVariants();
-}, {
-  timezone: 'Europe/Istanbul'
-});
+}, { timezone: 'Europe/Istanbul' });
 */
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
