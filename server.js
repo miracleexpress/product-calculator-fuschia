@@ -94,7 +94,7 @@ app.post('/create-custom-variant', async (req, res) => {
     const mfMutation = `
       mutation {
         metafieldsSet(input: {
-          ownerId: "${variantGid}",
+          ownerId: "${productVariant.id}",
           metafields: [{
             namespace: "prune",
             key: "isdeletable",
