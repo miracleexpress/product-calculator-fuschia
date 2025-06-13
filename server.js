@@ -14,15 +14,17 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
+// Shopify Admin API Config
 const shop = process.env.SHOPIFY_SHOP;
 const accessToken = process.env.SHOPIFY_ADMIN_API_KEY;
 
+// Health Check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'API is running' });
 });
 
 // —————————————————————————————————————————————
-// Shipping Profile alma
+// Shipping Profile Alma
 // —————————————————————————————————————————————
 async function getShippingProfileId(productGid) {
   const query = `
@@ -54,12 +56,11 @@ async function getShippingProfileId(productGid) {
     console.warn('⚠️ Shipping profile alınamadı:', err.message);
     return null;
   }
+}
 
-// —————————————————————————————————————————————
-// Variant Oluşturma ve Kargo Profil Atama
-// —————————————————————————————————————————————
+// Create Variant with GraphQL
 app.post('/create-custom-variant', async (req, res) => {
-  const { productId, price, title = 'Custom Size' } = req.body;
+  const { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
 
   if (!productId || !price) {
     return res.status(400).json({ error: 'productId and price are required' });
@@ -68,6 +69,7 @@ app.post('/create-custom-variant', async (req, res) => {
   try {
     const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
     const sku = `custom-${Date.now()}`;
+
     const productGid = `gid://shopify/Product/${productId}`;
 
     console.log("🧩 Varyant oluşturuluyor:", { productGid, price, sku, optionTitle });
@@ -109,20 +111,20 @@ app.post('/create-custom-variant', async (req, res) => {
     const gqlData = gqlRes?.data;
     console.log("📦 Variant creation response:", JSON.stringify(gqlData, null, 2));
 
-    const { productVariant, userErrors } = gqlData?.data?.productVariantCreate || {};
+    const { productVariant, userErrors } = gqlData.data.productVariantCreate;
 
-    if (userErrors?.length) {
+    if (userErrors && userErrors.length > 0) {
       console.error('❌ Shopify userErrors:', userErrors);
       return res.status(400).json({ error: userErrors });
     }
 
-    if (!productVariant?.id) {
-      console.error('❌ Varyant oluşturulamadı.');
-      return res.status(500).json({ error: 'Varyant oluşturulamadı' });
+    if (!productVariant || !productVariant.id) {
+      console.error('❌ Varyant oluşturulamadı, productVariant boş:', productVariant);
+      return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
     }
 
-    // Shipping profile eşlemesi
     const shippingProfileId = await getShippingProfileId(productGid);
+    console.log("📦 Shipping Profile ID:", shippingProfileId);
 
     if (shippingProfileId) {
       const assignMutation = `
@@ -165,7 +167,7 @@ app.post('/create-custom-variant', async (req, res) => {
       console.log("📬 deliveryProfilesUpdate yanıtı:", JSON.stringify(assignRes.data, null, 2));
 
       const assignErrors = assignRes.data?.data?.deliveryProfilesUpdate?.userErrors;
-      if (assignErrors?.length) {
+      if (assignErrors && assignErrors.length > 0) {
         console.warn('⚠️ deliveryProfilesUpdate hataları:', assignErrors);
       } else {
         console.log('✅ Varyant shipping profiline eklendi');
@@ -178,10 +180,11 @@ app.post('/create-custom-variant', async (req, res) => {
       isDeletable: true
     });
   } catch (err) {
-    console.error('🔥 GraphQL error:', err.response?.data || err.message);
+    console.error('GraphQL variant creation error:', err.response?.data || err.message);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 /*
