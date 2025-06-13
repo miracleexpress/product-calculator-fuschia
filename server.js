@@ -30,6 +30,7 @@ async function getShippingProfileId(productGid) {
   const query = `
     query {
       product(id: "${productGid}") {
+        id
         title
         shippingProfile {
           id
@@ -73,6 +74,10 @@ app.post('/create-custom-variant', async (req, res) => {
     const productGid = `gid://shopify/Product/${productId}`;
 
     console.log("🧩 Varyant oluşturuluyor:", { productGid, price, sku, optionTitle });
+
+    // shipping profile ID'yi varyantı oluşturmadan önce çekiyoruz
+    const shippingProfileId = await getShippingProfileId(productGid);
+    console.log("📦 Ana ürünün Shipping Profile ID:", shippingProfileId);
 
     const mutation = `
       mutation {
@@ -123,9 +128,6 @@ app.post('/create-custom-variant', async (req, res) => {
       return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
     }
 
-    const shippingProfileId = await getShippingProfileId(productGid);
-    console.log("📦 Shipping Profile ID:", shippingProfileId);
-
     if (shippingProfileId) {
       const assignMutation = `
         mutation {
@@ -172,6 +174,8 @@ app.post('/create-custom-variant', async (req, res) => {
       } else {
         console.log('✅ Varyant shipping profiline eklendi');
       }
+    } else {
+      console.warn('⚠️ Ana ürün shipping profile bulunamadı, atama yapılmadı.');
     }
 
     res.status(200).json({
@@ -184,7 +188,6 @@ app.post('/create-custom-variant', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 
 /*
