@@ -24,86 +24,49 @@ app.get('/health', (req, res) => {
 });
 
 // —————————————————————————————————————————————
-// Retry ile Shipping Profile Alma
+// Shipping Profile Alma
 // —————————————————————————————————————————————
-async function getShippingProfileWithRetry(productGid, retries = 3, delayMs = 1000) {
-  for (let i = 0; i < retries; i++) {
-    const getProfileQuery = `
-      query {
-        product(id: "${productGid}") {
-          shippingProfile {
-            id
-            name
-          }
+async function getShippingProfileId(productGid) {
+  const query = `
+    query {
+      product(id: "${productGid}") {
+        shippingProfile {
+          id
         }
       }
-    `;
-
-    try {
-      const res = await axios.post(
-        `https://${shop}/admin/api/2023-10/graphql.json`,
-        { query: getProfileQuery },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      const profileId = res.data?.data?.product?.shippingProfile?.id;
-      if (profileId) return profileId;
-    } catch (err) {
-      console.warn("⚠️ Shipping profile çekim denemesi başarısız:", err.message);
     }
-
-    // Bekle sonra tekrar dene
-    await new Promise(resolve => setTimeout(resolve, delayMs));
+  `;
+  try {
+    const res = await axios.post(
+      `https://${shop}/admin/api/2023-10/graphql.json`,
+      { query },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    return res.data?.data?.product?.shippingProfile?.id || null;
+  } catch (err) {
+    console.warn('⚠️ Shipping profile alınamadı:', err.message);
+    return null;
   }
-
-  return null;
 }
 
 // Create Variant with GraphQL
 app.post('/create-custom-variant', async (req, res) => {
-  let { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
+  const { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
 
   if (!productId || !price) {
     return res.status(400).json({ error: 'productId and price are required' });
   }
 
   try {
-    // Eğer gelen ID varyant ID'siyse, asıl productId'yi al
-    if (productId.startsWith("gid://shopify/ProductVariant")) {
-      const resolveQuery = `
-        query {
-          productVariant(id: "${productId}") {
-            product {
-              id
-            }
-          }
-        }
-      `;
-      const resolveRes = await axios.post(
-        `https://${shop}/admin/api/2023-10/graphql.json`,
-        { query: resolveQuery },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      productId = resolveRes.data?.data?.productVariant?.product?.id?.split("gid://shopify/Product/")[1];
-    }
-
-    // Log ekle
-    console.log("➡️ Gelen productId:", productId);
-    const productGid = `gid://shopify/Product/${productId}`;
-    console.log("➡️ productGid:", productGid);
-
     const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
     const sku = `custom-${Date.now()}`;
+
+    const productGid = `gid://shopify/Product/${productId}`;
 
     const mutation = `
       mutation {
@@ -158,20 +121,21 @@ app.post('/create-custom-variant', async (req, res) => {
       return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
     }
 
-    // ———————————— SHIPPING PROFILE ENTEGRASYONU ————————————
+    // Shipping Profile Atama (deliveryProfilesUpdate)
+    const shippingProfileId = await getShippingProfileId(productGid);
 
-    const shippingProfileId = await getShippingProfileWithRetry(productGid);
-
-    if (!shippingProfileId) {
-      console.warn("⚠️ Shipping profile bulunamadı, taşıma yapılmayacak");
-    } else {
-      const moveMutation = `
+    if (shippingProfileId) {
+      const assignMutation = `
         mutation {
-          productMoveToShippingProfile(
-            productId: "${productGid}",
-            shippingProfileId: "${shippingProfileId}"
-          ) {
-            product {
+          deliveryProfilesUpdate(deliveryProfile: {
+            id: "${shippingProfileId}"
+            profileItems: [
+              {
+                variantId: "${productVariant.id}"
+              }
+            ]
+          }) {
+            deliveryProfile {
               id
             }
             userErrors {
@@ -182,9 +146,9 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       `;
 
-      const moveRes = await axios.post(
+      const assignRes = await axios.post(
         `https://${shop}/admin/api/2023-10/graphql.json`,
-        { query: moveMutation },
+        { query: assignMutation },
         {
           headers: {
             'X-Shopify-Access-Token': accessToken,
@@ -193,16 +157,16 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       );
 
-      const moveErrors = moveRes.data?.data?.productMoveToShippingProfile?.userErrors;
-      if (moveErrors && moveErrors.length > 0) {
-        console.warn("⚠️ productMoveToShippingProfile hataları:", moveErrors);
+      const assignErrors = assignRes.data?.data?.deliveryProfilesUpdate?.userErrors;
+      if (assignErrors && assignErrors.length > 0) {
+        console.warn('⚠️ deliveryProfilesUpdate hataları:', assignErrors);
       } else {
-        console.log("✅ Ürün shipping profiline yeniden bağlandı");
+        console.log('✅ Varyant shipping profiline eklendi');
       }
     }
 
     res.status(200).json({
-      variantId : productVariant.id,
+      variantId: productVariant.id,
       sku,
       isDeletable: true
     });
@@ -222,6 +186,7 @@ async function deleteOldVariants() {
   let skippedCount = 0;
 
   try {
+    // Eski varyantları çek
     const listRes = await axios.get(
       `https://${shop}/admin/api/2023-10/variants.json`,
       {
