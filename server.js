@@ -24,25 +24,32 @@ app.get('/health', (req, res) => {
 });
 
 // —————————————————————————————————————————————
-// Shipping Profile Alma
+// Shipping Profile Alma (fallback: deliveryProfiles üzerinden)
 // —————————————————————————————————————————————
 async function getShippingProfileId(productGid) {
-  const query = `
+  const fallbackQuery = `
     query {
-      product(id: "${productGid}") {
-        id
-        title
-        shippingProfile {
-          id
-          name
+      deliveryProfiles(first: 50) {
+        edges {
+          node {
+            id
+            profileItems(first: 50) {
+              edges {
+                node {
+                  product { id }
+                }
+              }
+            }
+          }
         }
       }
     }
   `;
+
   try {
     const res = await axios.post(
       `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query },
+      { query: fallbackQuery },
       {
         headers: {
           'X-Shopify-Access-Token': accessToken,
@@ -50,13 +57,23 @@ async function getShippingProfileId(productGid) {
         }
       }
     );
-    const result = res.data?.data?.product;
-    console.log("📦 Shipping profile query result:", JSON.stringify(result, null, 2));
-    return result?.shippingProfile?.id || null;
+
+    const profiles = res.data?.data?.deliveryProfiles?.edges || [];
+    for (const profileEdge of profiles) {
+      const profileId = profileEdge.node.id;
+      const items = profileEdge.node.profileItems.edges;
+      for (const item of items) {
+        const itemProductId = item.node.product?.id;
+        if (itemProductId === productGid) {
+          return profileId;
+        }
+      }
+    }
   } catch (err) {
-    console.warn('⚠️ Shipping profile alınamadı:', err.message);
-    return null;
+    console.warn('⚠️ Fallback deliveryProfiles sorgusunda hata:', err.message);
   }
+
+  return null;
 }
 
 // Create Variant with GraphQL
@@ -75,7 +92,6 @@ app.post('/create-custom-variant', async (req, res) => {
 
     console.log("🧩 Varyant oluşturuluyor:", { productGid, price, sku, optionTitle });
 
-    // shipping profile ID'yi öncelikle gelen değerden al, yoksa ürün üzerinden çek
     let finalShippingProfileId = shippingProfileId;
     if (!finalShippingProfileId) {
       finalShippingProfileId = await getShippingProfileId(productGid);
@@ -193,7 +209,6 @@ app.post('/create-custom-variant', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 /*
 // —————————————————————————————————————————————
