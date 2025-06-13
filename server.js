@@ -25,17 +25,44 @@ app.get('/health', (req, res) => {
 
 // Create Variant with GraphQL
 app.post('/create-custom-variant', async (req, res) => {
-  const { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
+  let { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
 
   if (!productId || !price) {
     return res.status(400).json({ error: 'productId and price are required' });
   }
 
   try {
+    // Eğer gelen ID varyant ID'siyse, asıl productId'yi al
+    if (productId.startsWith("gid://shopify/ProductVariant")) {
+      const resolveQuery = `
+        query {
+          productVariant(id: "${productId}") {
+            product {
+              id
+            }
+          }
+        }
+      `;
+      const resolveRes = await axios.post(
+        `https://${shop}/admin/api/2023-10/graphql.json`,
+        { query: resolveQuery },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      productId = resolveRes.data?.data?.productVariant?.product?.id?.split("gid://shopify/Product/")[1];
+    }
+
+    // Log ekle
+    console.log("➡️ Gelen productId:", productId);
+    const productGid = `gid://shopify/Product/${productId}`;
+    console.log("➡️ productGid:", productGid);
+
     const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
     const sku = `custom-${Date.now()}`;
-
-    const productGid = `gid://shopify/Product/${productId}`;
 
     const mutation = `
       mutation {
