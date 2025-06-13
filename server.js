@@ -28,8 +28,10 @@ async function getShippingProfileId(productGid) {
   const query = `
     query {
       product(id: "${productGid}") {
+        title
         shippingProfile {
           id
+          name
         }
       }
     }
@@ -45,14 +47,13 @@ async function getShippingProfileId(productGid) {
         }
       }
     );
-    const profileId = res.data?.data?.product?.shippingProfile?.id;
-    console.log("📦 Shipping Profile ID:", profileId);
-    return profileId || null;
+    const result = res.data?.data?.product;
+    console.log("📦 Shipping profile query result:", JSON.stringify(result, null, 2));
+    return result?.shippingProfile?.id || null;
   } catch (err) {
     console.warn('⚠️ Shipping profile alınamadı:', err.message);
     return null;
   }
-}
 
 // —————————————————————————————————————————————
 // Variant Oluşturma ve Kargo Profil Atama
