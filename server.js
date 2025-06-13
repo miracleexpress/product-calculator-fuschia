@@ -90,32 +90,23 @@ app.post('/create-custom-variant', async (req, res) => {
       return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
     }
 
-    /*
-    // 2) 'isDeletable' metafield set et
-    const mfMutation = `
-      mutation {
-        metafieldsSet(input: {
-          metafields: [{
-            namespace: "prune",
-            key: "isdeletable",
-            type: "boolean",    
-            value: "true",
-            ownerId: "gid://shopify/ProductVariant/${productVariant.id}"
-          }]
-        }) {
-          metafields {
+    // ———————————— SHIPPING PROFILE ENTEGRASYONU ————————————
+
+    // 1) Ürünün bağlı olduğu shipping profile'ı çek
+    const getProfileQuery = `
+      query {
+        product(id: "${productGid}") {
+          shippingProfile {
             id
-          }
-          userErrors {
-            field
-            message
+            name
           }
         }
       }
     `;
-    const mfRes = await axios.post(
+
+    const profileRes = await axios.post(
       `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query: mfMutation },
+      { query: getProfileQuery },
       {
         headers: {
           'X-Shopify-Access-Token': accessToken,
@@ -123,14 +114,50 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       }
     );
-    
-    const mfErrors = mfRes.data.data.metafieldsSet.userErrors;
-    if (mfErrors && mfErrors.length) {
-      console.warn('Metafield set warnings:', mfErrors);
-    }
-      */
 
-    // 3) Yanıt
+    const shippingProfileId = profileRes.data?.data?.product?.shippingProfile?.id;
+
+    if (!shippingProfileId) {
+      console.warn("⚠️ Shipping profile bulunamadı, taşıma yapılmayacak");
+    } else {
+      // 2) Ürünü aynı profile tekrar bağla (garanti altına almak için)
+      const moveMutation = `
+        mutation {
+          productMoveToShippingProfile(
+            productId: "${productGid}",
+            shippingProfileId: "${shippingProfileId}"
+          ) {
+            product {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      const moveRes = await axios.post(
+        `https://${shop}/admin/api/2023-10/graphql.json`,
+        { query: moveMutation },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const moveErrors = moveRes.data?.data?.productMoveToShippingProfile?.userErrors;
+      if (moveErrors && moveErrors.length > 0) {
+        console.warn("⚠️ productMoveToShippingProfile hataları:", moveErrors);
+      } else {
+        console.log("✅ Ürün shipping profiline yeniden bağlandı");
+      }
+    }
+
+    // Yanıt
     res.status(200).json({
       variantId : productVariant.id,
       sku,
@@ -152,7 +179,6 @@ async function deleteOldVariants() {
   let skippedCount = 0;
 
   try {
-    // Eski varyantları çek
     const listRes = await axios.get(
       `https://${shop}/admin/api/2023-10/variants.json`,
       {
@@ -167,7 +193,6 @@ async function deleteOldVariants() {
     console.log(`Found ${variants.length} variants older than ${cutoff}`);
 
     for (const v of variants) {
-      // Metafield’ı kontrol et
       const mfRes = await axios.get(
         `https://${shop}/admin/api/2023-10/variants/${v.id}/metafields.json`,
         { headers: { 'X-Shopify-Access-Token': accessToken } }
@@ -182,7 +207,6 @@ async function deleteOldVariants() {
         continue;
       }
 
-      // Sil
       try {
         await axios.delete(
           `https://${shop}/admin/api/2023-10/variants/${v.id}.json`,
@@ -194,7 +218,6 @@ async function deleteOldVariants() {
         console.error(`❌  Failed to delete variant ${v.id}:`, delErr.response?.data || delErr.message);
       }
 
-      // Rate limit için kısa gecikme
       await new Promise(r => setTimeout(r, 500));
     }
 
@@ -212,7 +235,6 @@ cron.schedule('0 5 * * *', () => {
   deleteOldVariants();
 }, { timezone: 'Europe/Istanbul' });
 */
-
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
