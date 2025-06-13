@@ -61,7 +61,7 @@ async function getShippingProfileId(productGid) {
 
 // Create Variant with GraphQL
 app.post('/create-custom-variant', async (req, res) => {
-  const { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
+  let { productId, price, title = 'Custom Size', customProperties = {}, shippingProfileId } = req.body;
 
   if (!productId || !price) {
     return res.status(400).json({ error: 'productId and price are required' });
@@ -75,9 +75,14 @@ app.post('/create-custom-variant', async (req, res) => {
 
     console.log("🧩 Varyant oluşturuluyor:", { productGid, price, sku, optionTitle });
 
-    // shipping profile ID'yi varyantı oluşturmadan önce çekiyoruz
-    const shippingProfileId = await getShippingProfileId(productGid);
-    console.log("📦 Ana ürünün Shipping Profile ID:", shippingProfileId);
+    // shipping profile ID'yi öncelikle gelen değerden al, yoksa ürün üzerinden çek
+    let finalShippingProfileId = shippingProfileId;
+    if (!finalShippingProfileId) {
+      finalShippingProfileId = await getShippingProfileId(productGid);
+      console.log("📦 Ana üründen çekilen Shipping Profile ID:", finalShippingProfileId);
+    } else {
+      console.log("📦 handleFormSubmit üzerinden gelen Shipping Profile ID:", finalShippingProfileId);
+    }
 
     const mutation = `
       mutation {
@@ -128,11 +133,11 @@ app.post('/create-custom-variant', async (req, res) => {
       return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
     }
 
-    if (shippingProfileId) {
+    if (finalShippingProfileId) {
       const assignMutation = `
         mutation {
           deliveryProfilesUpdate(deliveryProfile: {
-            id: "${shippingProfileId}"
+            id: "${finalShippingProfileId}"
             profileItems: [
               {
                 variantId: "${productVariant.id}"
@@ -151,7 +156,7 @@ app.post('/create-custom-variant', async (req, res) => {
       `;
 
       console.log("📬 deliveryProfilesUpdate gönderiliyor:", {
-        shippingProfileId,
+        finalShippingProfileId,
         variantId: productVariant.id
       });
 
