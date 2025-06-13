@@ -23,6 +23,47 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'API is running' });
 });
 
+// —————————————————————————————————————————————
+// Retry ile Shipping Profile Alma
+// —————————————————————————————————————————————
+async function getShippingProfileWithRetry(productGid, retries = 3, delayMs = 1000) {
+  for (let i = 0; i < retries; i++) {
+    const getProfileQuery = `
+      query {
+        product(id: "${productGid}") {
+          shippingProfile {
+            id
+            name
+          }
+        }
+      }
+    `;
+
+    try {
+      const res = await axios.post(
+        `https://${shop}/admin/api/2023-10/graphql.json`,
+        { query: getProfileQuery },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const profileId = res.data?.data?.product?.shippingProfile?.id;
+      if (profileId) return profileId;
+    } catch (err) {
+      console.warn("⚠️ Shipping profile çekim denemesi başarısız:", err.message);
+    }
+
+    // Bekle sonra tekrar dene
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+
+  return null;
+}
+
 // Create Variant with GraphQL
 app.post('/create-custom-variant', async (req, res) => {
   let { productId, price, title = 'Custom Size', customProperties = {} } = req.body;
@@ -119,35 +160,11 @@ app.post('/create-custom-variant', async (req, res) => {
 
     // ———————————— SHIPPING PROFILE ENTEGRASYONU ————————————
 
-    // 1) Ürünün bağlı olduğu shipping profile'ı çek
-    const getProfileQuery = `
-      query {
-        product(id: "${productGid}") {
-          shippingProfile {
-            id
-            name
-          }
-        }
-      }
-    `;
-
-    const profileRes = await axios.post(
-      `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query: getProfileQuery },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const shippingProfileId = profileRes.data?.data?.product?.shippingProfile?.id;
+    const shippingProfileId = await getShippingProfileWithRetry(productGid);
 
     if (!shippingProfileId) {
       console.warn("⚠️ Shipping profile bulunamadı, taşıma yapılmayacak");
     } else {
-      // 2) Ürünü aynı profile tekrar bağla (garanti altına almak için)
       const moveMutation = `
         mutation {
           productMoveToShippingProfile(
@@ -184,7 +201,6 @@ app.post('/create-custom-variant', async (req, res) => {
       }
     }
 
-    // Yanıt
     res.status(200).json({
       variantId : productVariant.id,
       sku,
