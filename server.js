@@ -152,8 +152,8 @@ app.post('/create-custom-variant', async (req, res) => {
     if (finalShippingProfileId) {
       const assignMutation = `
         mutation {
-          deliveryProfilesUpdate(deliveryProfile: {
-            id: "${finalShippingProfileId}"
+          deliveryProfileUpdate(deliveryProfile: {
+            id: "${finalShippingProfileId}",
             profileItems: [
               {
                 variantId: "${productVariant.id}"
@@ -171,7 +171,7 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       `;
 
-      console.log("📬 deliveryProfilesUpdate gönderiliyor:", {
+      console.log("📬 deliveryProfileUpdate gönderiliyor:", {
         finalShippingProfileId,
         variantId: productVariant.id
       });
@@ -187,11 +187,11 @@ app.post('/create-custom-variant', async (req, res) => {
         }
       );
 
-      console.log("📬 deliveryProfilesUpdate yanıtı:", JSON.stringify(assignRes.data, null, 2));
+      console.log("📬 deliveryProfileUpdate yanıtı:", JSON.stringify(assignRes.data, null, 2));
 
-      const assignErrors = assignRes.data?.data?.deliveryProfilesUpdate?.userErrors;
+      const assignErrors = assignRes.data?.data?.deliveryProfileUpdate?.userErrors;
       if (assignErrors && assignErrors.length > 0) {
-        console.warn('⚠️ deliveryProfilesUpdate hataları:', assignErrors);
+        console.warn('⚠️ deliveryProfileUpdate hataları:', assignErrors);
       } else {
         console.log('✅ Varyant shipping profiline eklendi');
       }
@@ -209,6 +209,7 @@ app.post('/create-custom-variant', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 /*
 // —————————————————————————————————————————————
