@@ -33,33 +33,30 @@ app.post('/create-custom-variant', async (req, res) => {
   }
 
   try {
-    // 1) Varyant oluşturma
+    // 1) Varyant oluşturma (inline args)
     const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
     const sku = `custom-${Date.now()}`;
     const productGid = `gid://shopify/Product/${productId}`;
 
-    const createVariantMutation = `
-      mutation CreateVariant($input: ProductVariantInput!) {
-        productVariantCreate(input: $input) {
+    const variantMutation = `
+      mutation {
+        productVariantCreate(input: {
+          productId: "${productGid}",
+          price: "${price}",
+          sku: "${sku}",
+          options: ["${optionTitle}"],
+          inventoryManagement: null,
+          inventoryPolicy: CONTINUE
+        }) {
           productVariant { id }
           userErrors { field message }
         }
       }
     `;
-    const createVariantVariables = {
-      input: {
-        productId: productGid,
-        price: price.toString(),
-        sku,
-        options: [optionTitle],
-        inventoryManagement: null,
-        inventoryPolicy: 'CONTINUE'
-      }
-    };
 
     const variantResponse = await axios.post(
       `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query: createVariantMutation, variables: createVariantVariables },
+      { query: variantMutation },
       { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
     );
 
@@ -71,32 +68,27 @@ app.post('/create-custom-variant', async (req, res) => {
 
     const variantId = variantData.productVariant.id;
 
-    // 2) Metafield güncelleme (isDeletable=true)
+    // 2) Metafield güncelleme (inline args)
     const metafieldMutation = `
-      mutation SetMeta($input: MetafieldsSetInput!) {
-        metafieldsSet(input: $input) {
+      mutation {
+        metafieldsSet(metafields: [
+          {
+            namespace: "prune",
+            key: "isdeletable",
+            ownerId: "${variantId}",
+            type: "boolean",
+            value: "true"
+          }
+        ]) {
           metafields { id namespace key value }
           userErrors { field message }
         }
       }
     `;
-    const metafieldVariables = {
-      input: {
-        metafields: [
-          {
-            namespace: 'prune',
-            key: 'isdeletable',
-            ownerId: variantId,
-            type: 'boolean',
-            value: 'true'
-          }
-        ]
-      }
-    };
 
     const mfResponse = await axios.post(
       `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query: metafieldMutation, variables: metafieldVariables },
+      { query: metafieldMutation },
       { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
     );
 
