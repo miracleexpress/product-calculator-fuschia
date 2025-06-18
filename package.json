@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "cleanup": "node cleanup.js"
+    "cleanup": "node cleanup.js",
+    "cleanuptest": "node cleanuptest.js"
   },
   "repository": {
     "type": "git",
