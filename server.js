@@ -93,9 +93,8 @@ app.post('/create-custom-variant', async (req, res) => {
     }
 
     // —————————————————————————————————————————————
-    // Opsiyonel Metafield Eklemek için örnek blok (isteğe bağlı aktif edilebilir)
+    // Opsiyonel Metafield Eklemek için aktif blok
     // —————————————————————————————————————————————
-    /*
     const mfMutation = `
       mutation {
         metafieldsSet(input: {
@@ -133,7 +132,6 @@ app.post('/create-custom-variant', async (req, res) => {
     if (mfErrors && mfErrors.length) {
       console.warn('Metafield set warnings:', mfErrors);
     }
-    */
 
     res.status(200).json({
       variantId: productVariant.id,
