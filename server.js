@@ -36,7 +36,6 @@ app.post('/create-custom-variant', async (req, res) => {
   try {
     const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
     const sku = `custom-${Date.now()}`;
-
     const productGid = `gid://shopify/Product/${productId}`;
 
     const mutation = `
@@ -74,14 +73,12 @@ app.post('/create-custom-variant', async (req, res) => {
     );
 
     const gqlData = gqlRes?.data;
-
     if (!gqlData || !gqlData.data || !gqlData.data.productVariantCreate) {
-      console.error('❌ Shopify yanıtı hatalı veya eksik:', JSON.stringify(gqlData, null, 2));
+      console.error('❌ Incorrect or missing Shopify response:', JSON.stringify(gqlData, null, 2));
       return res.status(500).json({ error: 'Shopify yanıtı hatalı veya productVariantCreate eksik' });
     }
 
     const { productVariant, userErrors } = gqlData.data.productVariantCreate;
-
     if (userErrors && userErrors.length > 0) {
       console.error('❌ Shopify userErrors:', userErrors);
       return res.status(400).json({ error: userErrors });
@@ -93,7 +90,7 @@ app.post('/create-custom-variant', async (req, res) => {
     }
 
     // —————————————————————————————————————————————
-    // Opsiyonel Metafield Eklemek için aktif blok
+    // Metafield Eklemek için aktif blok
     // —————————————————————————————————————————————
     const mfMutation = `
       mutation {
@@ -128,16 +125,24 @@ app.post('/create-custom-variant', async (req, res) => {
       }
     );
 
-    const mfErrors = mfRes.data.data.metafieldsSet.userErrors;
-    if (mfErrors && mfErrors.length) {
-      console.warn('Metafield set warnings:', mfErrors);
+    // Hata kontrolü: data.metafieldsSet yoksa logla
+    const mfData = mfRes.data && mfRes.data.data;
+    if (!mfData || !mfData.metafieldsSet) {
+      console.warn('⚠️ metafieldsSet cevabı beklenildiği gibi gelmedi:', mfRes.data);
+    } else {
+      const mfErrors = mfData.metafieldsSet.userErrors;
+      if (mfErrors && mfErrors.length) {
+        console.warn('🛑 Metafield set warnings:', mfErrors);
+      }
     }
 
+    // Başarı yanıtı
     res.status(200).json({
       variantId: productVariant.id,
       sku,
       isDeletable: true
     });
+
   } catch (err) {
     console.error('GraphQL variant creation error:', err.response?.data || err.message);
     res.status(500).json({ error: err.message });
