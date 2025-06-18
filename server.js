@@ -4,7 +4,6 @@ import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import cron from 'node-cron';
 
 dotenv.config();
 
@@ -62,25 +61,19 @@ app.post('/create-custom-variant', async (req, res) => {
     );
 
     const variantResult = variantResponse.data?.data?.productVariantCreate;
-    if (!variantResult) {
+    if (!variantResult || variantResult.userErrors.length) {
       console.error('❌ Variant creation error:', variantResponse.data);
-      return res.status(500).json({ error: 'Variant creation failed' });
+      return res.status(500).json({ error: variantResult?.userErrors || 'Variant creation failed' });
     }
 
-    const { productVariant, userErrors } = variantResult;
-    if (userErrors && userErrors.length) {
-      console.error('❌ Shopify Errors:', userErrors);
-      return res.status(400).json({ error: userErrors });
-    }
-
-    const variantId = productVariant.id;
+    const variantId = variantResult.productVariant.id;
 
     // 2) Metafield güncelleme (isDeletable=true)
     let isDeletable = false;
-    try {
-      const metafieldMutation = `
-        mutation {
-          metafieldsSet(metafields: [
+    const metafieldMutation = `
+      mutation {
+        metafieldsSet(
+          metafields: [
             {
               namespace: "prune",
               key: "isdeletable",
@@ -88,29 +81,25 @@ app.post('/create-custom-variant', async (req, res) => {
               type: "boolean",
               value: "true"
             }
-          ]) {
-            metafields { id }
-            userErrors { field message }
-          }
+          ]
+        ) {
+          metafields { id namespace key value }
+          userErrors { field message }
         }
-      `;
-
-      const mfResponse = await axios.post(
-        `https://${shop}/admin/api/2023-10/graphql.json`,
-        { query: metafieldMutation },
-        { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
-      );
-
-      const mfResult = mfResponse.data?.data?.metafieldsSet;
-      if (!mfResult) {
-        console.warn('⚠️ metafieldsSet response invalid:', mfResponse.data);
-      } else if (mfResult.userErrors && mfResult.userErrors.length) {
-        console.warn('🛑 Metafield errors:', mfResult.userErrors);
-      } else {
-        isDeletable = true;
       }
-    } catch (mfErr) {
-      console.warn('⚠️ Metafield update failed:', mfErr.response?.data || mfErr.message);
+    `;
+
+    const mfResponse = await axios.post(
+      `https://${shop}/admin/api/2023-10/graphql.json`,
+      { query: metafieldMutation },
+      { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
+    );
+
+    const mfResult = mfResponse.data?.data?.metafieldsSet;
+    if (!mfResult || mfResult.userErrors.length) {
+      console.warn('⚠️ Metafield update warnings/errors:', mfResponse.data);
+    } else {
+      isDeletable = true;
     }
 
     // 3) Yanıt dön
