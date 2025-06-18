@@ -80,13 +80,15 @@ app.post('/create-custom-variant', async (req, res) => {
     try {
       const metafieldMutation = `
         mutation {
-          metafieldsSet(metafields: [{
-            namespace: "prune",
-            key: "isdeletable",
-            value: "true",
-            type: "boolean",
-            ownerId: "${variantId}"
-          }]) {
+          metafieldsSet(input: {
+            metafields: [{
+              namespace: "prune",
+              key: "isdeletable",
+              value: "true",
+              type: "boolean",
+              ownerId: "${variantId}"
+            }]
+          }) {
             metafields { id }
             userErrors { field message }
           }
