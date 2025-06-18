@@ -83,15 +83,13 @@ app.post('/create-custom-variant', async (req, res) => {
     try {
       const mfMutation = `
         mutation {
-          metafieldsSet(input: {
-            metafields: [{
-              namespace: "prune",
-              key: "isdeletable",
-              type: "boolean",
-              value: "true",
-              ownerId: "gid://shopify/ProductVariant/${productVariant.id}"
-            }]
-          }) {
+          metafieldsSet(metafields: [{
+            namespace: "prune",
+            key: "isdeletable",
+            type: "boolean",
+            value: "true",
+            ownerId: "gid://shopify/ProductVariant/${productVariant.id}"
+          }]) {
             metafields { id }
             userErrors { field message }
           }
