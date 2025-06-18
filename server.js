@@ -39,7 +39,7 @@ app.post('/create-custom-variant', async (req, res) => {
     const productGid = `gid://shopify/Product/${productId}`;
 
     const createVariantMutation = `
-      mutation CreateVariant($input: ProductVariantInput!) {
+      mutation CreateVariant($input: ProductVariantCreateInput!) {
         productVariantCreate(input: $input) {
           productVariant { id }
           userErrors { field message }
@@ -63,13 +63,13 @@ app.post('/create-custom-variant', async (req, res) => {
       { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
     );
 
-    const variantResult = variantResponse.data?.data?.productVariantCreate;
-    if (!variantResult || variantResult.userErrors.length) {
+    const variantData = variantResponse.data?.data?.productVariantCreate;
+    if (!variantData || variantData.userErrors.length) {
       console.error('❌ Variant creation error:', variantResponse.data);
-      return res.status(500).json({ error: variantResult?.userErrors || 'Variant creation failed' });
+      return res.status(500).json({ error: variantData?.userErrors || 'Variant creation failed' });
     }
 
-    const variantId = variantResult.productVariant.id;
+    const variantId = variantData.productVariant.id;
 
     // 2) Metafield güncelleme (isDeletable=true)
     const metafieldMutation = `
@@ -102,10 +102,10 @@ app.post('/create-custom-variant', async (req, res) => {
 
     const mfData = mfResponse.data?.data?.metafieldsSet;
     let isDeletable = false;
-    if (!mfData || mfData.userErrors.length) {
-      console.warn('⚠️ Metafield update warnings/errors:', mfResponse.data);
-    } else {
+    if (mfData && !mfData.userErrors.length) {
       isDeletable = true;
+    } else {
+      console.warn('⚠️ Metafield update warnings/errors:', mfResponse.data);
     }
 
     // 3) Yanıt dön
