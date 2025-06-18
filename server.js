@@ -34,11 +34,12 @@ app.post('/create-custom-variant', async (req, res) => {
   }
 
   try {
+    // 1) Varyant oluştur
     const optionTitle = `${title} - ${Date.now().toString().slice(-4)}`;
     const sku = `custom-${Date.now()}`;
     const productGid = `gid://shopify/Product/${productId}`;
 
-    const mutation = `
+    const variantMutation = `
       mutation {
         productVariantCreate(input: {
           productId: "${productGid}",
@@ -48,104 +49,83 @@ app.post('/create-custom-variant', async (req, res) => {
           inventoryManagement: null,
           inventoryPolicy: CONTINUE
         }) {
-          productVariant {
-            id
-            title
-            sku
-          }
-          userErrors {
-            field
-            message
-          }
+          productVariant { id title sku }
+          userErrors { field message }
         }
       }
     `;
 
-    const gqlRes = await axios.post(
+    const variantRes = await axios.post(
       `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query: mutation },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      }
+      { query: variantMutation },
+      { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
     );
 
-    const gqlData = gqlRes?.data;
-    if (!gqlData || !gqlData.data || !gqlData.data.productVariantCreate) {
-      console.error('❌ Incorrect or missing Shopify response:', JSON.stringify(gqlData, null, 2));
-      return res.status(500).json({ error: 'Shopify yanıtı hatalı veya productVariantCreate eksik' });
+    const variantData = variantRes.data?.data?.productVariantCreate;
+    if (!variantData) {
+      console.error('❌ Shopify variantCreate response invalid', variantRes.data);
+      return res.status(500).json({ error: 'Variant creation failed' });
     }
 
-    const { productVariant, userErrors } = gqlData.data.productVariantCreate;
-    if (userErrors && userErrors.length > 0) {
+    const { productVariant, userErrors } = variantData;
+    if (userErrors && userErrors.length) {
       console.error('❌ Shopify userErrors:', userErrors);
       return res.status(400).json({ error: userErrors });
     }
 
-    if (!productVariant || !productVariant.id) {
+    if (!productVariant?.id) {
       console.error('❌ Varyant oluşturulamadı, productVariant boş:', productVariant);
-      return res.status(500).json({ error: 'Varyant oluşturulamadı, productVariant boş' });
+      return res.status(500).json({ error: 'Variant ID missing' });
     }
 
-    // —————————————————————————————————————————————
-    // Metafield Eklemek için aktif blok
-    // —————————————————————————————————————————————
-    const mfMutation = `
-      mutation {
-        metafieldsSet(input: {
-          metafields: [{
-            namespace: "prune",
-            key: "isdeletable",
-            type: "boolean",
-            value: "true",
-            ownerId: "gid://shopify/ProductVariant/${productVariant.id}"
-          }]
-        }) {
-          metafields {
-            id
-          }
-          userErrors {
-            field
-            message
+    // 2) Metafield ekleme, hata olsa da devam et
+    let isDeletable = false;
+    try {
+      const mfMutation = `
+        mutation {
+          metafieldsSet(input: {
+            metafields: [{
+              namespace: "prune",
+              key: "isdeletable",
+              type: "boolean",
+              value: "true",
+              ownerId: "gid://shopify/ProductVariant/${productVariant.id}"
+            }]
+          }) {
+            metafields { id }
+            userErrors { field message }
           }
         }
-      }
-    `;
+      `;
 
-    const mfRes = await axios.post(
-      `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query: mfMutation },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+      const mfRes = await axios.post(
+        `https://${shop}/admin/api/2023-10/graphql.json`,
+        { query: mfMutation },
+        { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
+      );
 
-    // Hata kontrolü: data.metafieldsSet yoksa logla
-    const mfData = mfRes.data && mfRes.data.data;
-    if (!mfData || !mfData.metafieldsSet) {
-      console.warn('⚠️ metafieldsSet cevabı beklenildiği gibi gelmedi:', mfRes.data);
-    } else {
-      const mfErrors = mfData.metafieldsSet.userErrors;
-      if (mfErrors && mfErrors.length) {
-        console.warn('🛑 Metafield set warnings:', mfErrors);
+      const mfData = mfRes.data?.data?.metafieldsSet;
+      if (!mfData) {
+        console.warn('⚠️ metafieldsSet response invalid', mfRes.data);
+      } else if (mfData.userErrors && mfData.userErrors.length) {
+        console.warn('🛑 Metafield set warnings:', mfData.userErrors);
+      } else {
+        isDeletable = true;
       }
+    } catch (mfErr) {
+      console.warn('⚠️ Metafield eklerken hata', mfErr.response?.data || mfErr.message);
     }
 
-    // Başarı yanıtı
-    res.status(200).json({
+    // 3) Başarıyla yanıt dön
+    return res.status(200).json({
       variantId: productVariant.id,
       sku,
-      isDeletable: true
+      isDeletable
     });
 
   } catch (err) {
     console.error('GraphQL variant creation error:', err.response?.data || err.message);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
