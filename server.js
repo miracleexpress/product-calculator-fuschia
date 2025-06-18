@@ -39,7 +39,7 @@ app.post('/create-custom-variant', async (req, res) => {
     const productGid = `gid://shopify/Product/${productId}`;
 
     const createVariantMutation = `
-      mutation CreateVariant($input: ProductVariantCreateInput!) {
+      mutation CreateVariant($input: ProductVariantInput!) {
         productVariantCreate(input: $input) {
           productVariant { id }
           userErrors { field message }
@@ -63,13 +63,13 @@ app.post('/create-custom-variant', async (req, res) => {
       { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
     );
 
-    const variantData = variantResponse.data?.data?.productVariantCreate;
-    if (!variantData || variantData.userErrors.length) {
+    const variantResult = variantResponse.data?.data?.productVariantCreate;
+    if (!variantResult || variantResult.userErrors.length) {
       console.error('❌ Variant creation error:', variantResponse.data);
-      return res.status(500).json({ error: variantData?.userErrors || 'Variant creation failed' });
+      return res.status(500).json({ error: variantResult?.userErrors || 'Variant creation failed' });
     }
 
-    const variantId = variantData.productVariant.id;
+    const variantId = variantResult.productVariant.id;
 
     // 2) Metafield güncelleme (isDeletable=true)
     const metafieldMutation = `
