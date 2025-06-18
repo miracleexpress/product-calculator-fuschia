@@ -39,7 +39,7 @@ app.post('/create-custom-variant', async (req, res) => {
     const productGid = `gid://shopify/Product/${productId}`;
 
     const createVariantMutation = `
-      mutation CreateVariant($input: ProductVariantCreateInput!) {
+      mutation CreateVariant($input: ProductVariantInput!) {
         productVariantCreate(input: $input) {
           productVariant { id }
           userErrors { field message }
