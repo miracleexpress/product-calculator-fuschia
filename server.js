@@ -39,75 +39,77 @@ app.post('/create-custom-variant', async (req, res) => {
     const productGid = `gid://shopify/Product/${productId}`;
 
     const createVariantMutation = `
-      mutation {
-        productVariantCreate(input: {
-          productId: "${productGid}",
-          price: "${price}",
-          sku: "${sku}",
-          options: ["${optionTitle}"],
-          inventoryManagement: null,
-          inventoryPolicy: CONTINUE
-        }) {
+      mutation CreateVariant($input: ProductVariantCreateInput!) {
+        productVariantCreate(input: $input) {
           productVariant { id }
           userErrors { field message }
         }
       }
     `;
+    const createVariantVariables = {
+      input: {
+        productId: productGid,
+        price: price.toString(),
+        sku,
+        options: [optionTitle],
+        inventoryManagement: null,
+        inventoryPolicy: 'CONTINUE'
+      }
+    };
 
     const variantResponse = await axios.post(
       `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query: createVariantMutation },
+      { query: createVariantMutation, variables: createVariantVariables },
       { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
     );
 
-    const variantResult = variantResponse.data?.data?.productVariantCreate;
-    if (!variantResult || variantResult.userErrors.length) {
+    const variantData = variantResponse.data?.data?.productVariantCreate;
+    if (!variantData || variantData.userErrors.length) {
       console.error('❌ Variant creation error:', variantResponse.data);
-      return res.status(500).json({ error: variantResult?.userErrors || 'Variant creation failed' });
+      return res.status(500).json({ error: variantData?.userErrors || 'Variant creation failed' });
     }
 
-    const variantId = variantResult.productVariant.id;
+    const variantId = variantData.productVariant.id;
 
     // 2) Metafield güncelleme (isDeletable=true)
-    let isDeletable = false;
     const metafieldMutation = `
-      mutation {
-        metafieldsSet(
-          metafields: [
-            {
-              namespace: "prune",
-              key: "isdeletable",
-              ownerId: "${variantId}",
-              type: "boolean",
-              value: "true"
-            }
-          ]
-        ) {
+      mutation SetMeta($input: MetafieldsSetInput!) {
+        metafieldsSet(input: $input) {
           metafields { id namespace key value }
           userErrors { field message }
         }
       }
     `;
+    const metafieldVariables = {
+      input: {
+        metafields: [
+          {
+            namespace: 'prune',
+            key: 'isdeletable',
+            ownerId: variantId,
+            type: 'boolean',
+            value: 'true'
+          }
+        ]
+      }
+    };
 
     const mfResponse = await axios.post(
       `https://${shop}/admin/api/2023-10/graphql.json`,
-      { query: metafieldMutation },
+      { query: metafieldMutation, variables: metafieldVariables },
       { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
     );
 
-    const mfResult = mfResponse.data?.data?.metafieldsSet;
-    if (!mfResult || mfResult.userErrors.length) {
+    const mfData = mfResponse.data?.data?.metafieldsSet;
+    let isDeletable = false;
+    if (!mfData || mfData.userErrors.length) {
       console.warn('⚠️ Metafield update warnings/errors:', mfResponse.data);
     } else {
       isDeletable = true;
     }
 
     // 3) Yanıt dön
-    return res.status(200).json({
-      variantId,
-      sku,
-      isDeletable
-    });
+    return res.status(200).json({ variantId, sku, isDeletable });
 
   } catch (err) {
     console.error('🚨 Server error:', err.response?.data || err.message);
