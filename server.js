@@ -84,7 +84,7 @@ app.post('/create-custom-variant', async (req, res) => {
             namespace: "prune",
             key: "isdeletable",
             value: "true",
-            type: BOOLEAN,
+            type: "boolean",
             ownerId: "${variantId}"
           }]) {
             metafields { id }
