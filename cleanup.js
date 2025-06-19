@@ -18,7 +18,7 @@ const headers = {
 async function cleanupVariants() {
   console.log('🧹 Starting variant cleanup');
   try {
-    // Fetch all variants with their titles
+    // 1) Tüm varyantları çekiyoruz
     const fetchQuery = `
       query {
         products(first: 250) {
@@ -37,16 +37,17 @@ async function cleanupVariants() {
         }
       }
     `;
-
     const response = await axios.post(graphqlUrl, { query: fetchQuery }, { headers });
     const products = response.data.data.products.edges;
 
     for (const { node: product } of products) {
       for (const { node: variant } of product.variants.edges) {
         const { id, title } = variant;
-        // If variant title ends with ' - ####', delete it
+
         if (/ - \d{4}$/.test(title)) {
-          console.log(`Deleting variant ${id} with title '${title}'`);
+          console.log(`🗑 Deleting variant ${id} — '${title}'`);
+
+          // 2) Silme mutasyonu
           const deleteMutation = `
             mutation {
               productVariantDelete(input: { id: "${id}" }) {
@@ -55,18 +56,42 @@ async function cleanupVariants() {
               }
             }
           `;
-          const delResp = await axios.post(graphqlUrl, { query: deleteMutation }, { headers });
-          const delData = delResp.data.data.productVariantDelete;
-          if (delData.userErrors.length) {
-            console.error('❌ Delete errors for', id, delData.userErrors);
+
+          let delResp;
+          try {
+            delResp = await axios.post(graphqlUrl, { query: deleteMutation }, { headers });
+          } catch (networkErr) {
+            console.error('🚨 Network error on delete:', networkErr.message);
+            continue;
+          }
+
+          const body = delResp.data;
+          // 3) GraphQL-level hataları varsa logla
+          if (body.errors && body.errors.length) {
+            console.error('🚨 GraphQL errors on delete:', JSON.stringify(body.errors, null, 2));
+            continue;
+          }
+
+          // 4) data.productVariantDelete mutlaka gelsin diye kontrol et
+          const result = body.data?.productVariantDelete;
+          if (!result) {
+            console.error('🚨 Unexpected delete response shape:', JSON.stringify(body, null, 2));
+            continue;
+          }
+
+          // 5) userErrors kontrolü
+          if (result.userErrors.length) {
+            console.error('❌ Shopify userErrors:', JSON.stringify(result.userErrors, null, 2));
           } else {
-            console.log('✅ Deleted variant:', delData.deletedProductVariantId);
+            console.log('✅ Deleted:', result.deletedProductVariantId);
           }
         }
       }
     }
-  } catch (error) {
-    console.error('🚨 Cleanup job failed', error.response?.data || error.message);
+
+    console.log('🧹 Variant cleanup finished');
+  } catch (err) {
+    console.error('🚨 Cleanup job failed:', err.response?.data || err.message);
   }
 }
 
