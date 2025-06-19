@@ -1,53 +1,91 @@
 // cleanup.js
-import axios from 'axios';
-import dotenv from 'dotenv';
+import axios from 'axios'
+import dotenv from 'dotenv'
 
-dotenv.config();
+dotenv.config()
 
-const shop = process.env.SHOPIFY_SHOP;
-const accessToken = process.env.SHOPIFY_ADMIN_API_KEY;
-const graphqlUrl = `https://${shop}/admin/api/2023-10/graphql.json`;
+const shop = process.env.SHOPIFY_SHOP
+const accessToken = process.env.SHOPIFY_ADMIN_API_KEY
+const graphqlUrl = `https://${shop}/admin/api/2023-10/graphql.json`
 const headers = {
   'X-Shopify-Access-Token': accessToken,
-  'Content-Type': 'application/json'
-};
+  'Content-Type': 'application/json',
+}
 
-/**
- * Delete variants whose title ends with ' - ####' (4-digit suffix)
- */
-async function cleanupVariants() {
-  console.log('🧹 Starting variant cleanup');
-  try {
-    // 1) Tüm varyantları çekiyoruz
-    const fetchQuery = `
-      query {
-        products(first: 250) {
-          edges {
-            node {
-              variants(first: 250) {
-                edges {
-                  node {
-                    id
-                    title
-                  }
-                }
-              }
+// Helper: paginate through all products
+async function fetchAllProductIDs() {
+  let ids = []
+  let cursor = null
+
+  do {
+    const query = `
+      query($after: String) {
+        products(first: 250${cursor ? ', after: $after' : ''}) {
+          pageInfo { hasNextPage }
+          edges { cursor node { id } }
+        }
+      }
+    `
+    const vars = cursor ? { after: cursor } : {}
+    const resp = await axios.post(graphqlUrl, { query, variables: vars }, { headers })
+    const data = resp.data.data.products
+
+    for (const edge of data.edges) {
+      ids.push(edge.node.id)
+    }
+    cursor = data.pageInfo.hasNextPage
+      ? data.edges[data.edges.length - 1].cursor
+      : null
+  } while (cursor)
+
+  return ids
+}
+
+// Helper: paginate through all variants of one product
+async function fetchAllVariants(productGid) {
+  let variants = []
+  let cursor = null
+
+  do {
+    const query = `
+      query($id: ID!, $after: String) {
+        node(id: $id) {
+          ... on Product {
+            variants(first: 250${cursor ? ', after: $after' : ''}) {
+              pageInfo { hasNextPage }
+              edges { cursor node { id title } }
             }
           }
         }
       }
-    `;
-    const response = await axios.post(graphqlUrl, { query: fetchQuery }, { headers });
-    const products = response.data.data.products.edges;
+    `
+    const vars = { id: productGid }
+    if (cursor) vars.after = cursor
+    const resp = await axios.post(graphqlUrl, { query, variables: vars }, { headers })
+    const data = resp.data.data.node.variants
 
-    for (const { node: product } of products) {
-      for (const { node: variant } of product.variants.edges) {
-        const { id, title } = variant;
+    for (const edge of data.edges) {
+      variants.push({ id: edge.node.id, title: edge.node.title })
+    }
+    cursor = data.pageInfo.hasNextPage
+      ? data.edges[data.edges.length - 1].cursor
+      : null
+  } while (cursor)
 
+  return variants
+}
+
+async function cleanupVariants() {
+  console.log('🧹 Starting full variant cleanup with pagination')
+  try {
+    const productIDs = await fetchAllProductIDs()
+
+    for (const pid of productIDs) {
+      const variants = await fetchAllVariants(pid)
+      for (const { id, title } of variants) {
         if (/ - \d{4}$/.test(title)) {
-          console.log(`🗑 Deleting variant ${id} — '${title}'`);
+          console.log(`🗑 Deleting ${id} — "${title}"`)
 
-          // 2) Silme mutasyonu (API 2023-10: doğrudan id argümanı)
           const deleteMutation = `
             mutation {
               productVariantDelete(id: "${id}") {
@@ -55,45 +93,55 @@ async function cleanupVariants() {
                 userErrors { field message }
               }
             }
-          `;
+          `
 
-          let delResp;
+          let delResp
           try {
-            delResp = await axios.post(graphqlUrl, { query: deleteMutation }, { headers });
+            delResp = await axios.post(
+              graphqlUrl,
+              { query: deleteMutation },
+              { headers }
+            )
           } catch (networkErr) {
-            console.error('🚨 Network error on delete:', networkErr.message);
-            continue;
+            console.error('🚨 Network error:', networkErr.message)
+            continue
           }
 
-          const body = delResp.data;
+          const body = delResp.data
 
-          // 3) GraphQL-level hataları varsa logla
-          if (body.errors && body.errors.length) {
-            console.error('🚨 GraphQL errors on delete:', JSON.stringify(body.errors, null, 2));
-            continue;
+          if (body.errors?.length) {
+            console.error(
+              '🚨 GraphQL errors:',
+              JSON.stringify(body.errors, null, 2)
+            )
+            continue
           }
 
-          // 4) data.productVariantDelete mutlaka gelsin diye kontrol et
-          const result = body.data?.productVariantDelete;
+          const result = body.data?.productVariantDelete
           if (!result) {
-            console.error('🚨 Unexpected delete response shape:', JSON.stringify(body, null, 2));
-            continue;
+            console.error(
+              '🚨 Unexpected shape:',
+              JSON.stringify(body, null, 2)
+            )
+            continue
           }
 
-          // 5) userErrors kontrolü
           if (result.userErrors.length) {
-            console.error('❌ Shopify userErrors:', JSON.stringify(result.userErrors, null, 2));
+            console.error(
+              '❌ userErrors:',
+              JSON.stringify(result.userErrors, null, 2)
+            )
           } else {
-            console.log('✅ Deleted:', result.deletedProductVariantId);
+            console.log('✅ Deleted:', result.deletedProductVariantId)
           }
         }
       }
     }
 
-    console.log('🧹 Variant cleanup finished');
+    console.log('🧹 Variant cleanup complete')
   } catch (err) {
-    console.error('🚨 Cleanup job failed:', err.response?.data || err.message);
+    console.error('🚨 Cleanup failed:', err.response?.data || err.message)
   }
 }
 
-cleanupVariants();
+cleanupVariants()
