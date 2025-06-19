@@ -47,10 +47,10 @@ async function cleanupVariants() {
         if (/ - \d{4}$/.test(title)) {
           console.log(`🗑 Deleting variant ${id} — '${title}'`);
 
-          // 2) Silme mutasyonu
+          // 2) Silme mutasyonu (API 2023-10: doğrudan id argümanı)
           const deleteMutation = `
             mutation {
-              productVariantDelete(input: { id: "${id}" }) {
+              productVariantDelete(id: "${id}") {
                 deletedProductVariantId
                 userErrors { field message }
               }
@@ -66,6 +66,7 @@ async function cleanupVariants() {
           }
 
           const body = delResp.data;
+
           // 3) GraphQL-level hataları varsa logla
           if (body.errors && body.errors.length) {
             console.error('🚨 GraphQL errors on delete:', JSON.stringify(body.errors, null, 2));
