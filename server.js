@@ -17,6 +17,9 @@ app.use(bodyParser.json());
 const shop = process.env.SHOPIFY_SHOP;
 const accessToken = process.env.SHOPIFY_ADMIN_API_KEY;
 
+console.log('shop', shop);
+console.log('accessToken', accessToken);
+
 // Health Check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'API is running' });
